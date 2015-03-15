@@ -2,31 +2,33 @@
     (:require [onyx.peer.task-lifecycle-extensions :as l-ext]
               [onyx.peer.pipeline-extensions :as p-ext]
               [clojurewerkz.cassaforte.client :as cass]
-              [clojurewerkz.cassaforte.cql :as cql]))
+              [clojurewerkz.cassaforte.cql :as cql]
+              [clojurewerkz.cassaforte.query :refer [paginate token]]))
 
 (defmethod l-ext/inject-lifecycle-resources
   :cassandra/scan
   [_ {:keys [onyx.core/task-map]  :as pipeline}]
-  {:cassandra/last-prim-kvs (atom false)})
+  {:cassandra/last-key (atom false)
+   :cassandra/session (cass/connect (:cassandra/hosts task-map) (:cassandra/keyspace task-map))})
 
 (defmethod p-ext/read-batch [:input :cassandra-scan]
-  [{:keys [onyx.core/task-map onyx.core/task :cassandra/last-prim-kvs] :as pipeline}]
+  [{:keys [onyx.core/task-map onyx.core/task cassandra/last-key cassandra/session] :as pipeline}]
 
   (cond
-    (nil? @last-prim-kvs)
-    (do
-      {:onyx.core/batch [{:input task :message :done}]})
+    (nil? @last-key)
+    {:onyx.core/batch [{:input task :message :done}]}
+    
     :else
-    (let [opts (:cassandra/scan-options task-map)
-          last @last-prim-kvs
-          opts (if last (assoc opts :last-prim-kvs last) opts)
+    (let [opts (assoc (:cassandra/scan-options task-map) :limit (:onyx/batch-size task-map))
+          lk @last-key
+          opts (if lk (assoc opts :where [[> (token (:cassandra/partition-key task-map)) (token lk)]]) opts)
           result
           (cql/select
-            (cass/connect (:cassandra/host task-map))
+            session
             (:cassandra/table task-map)
-            (assoc opts :limit (:onyx/batch-size task-map)))
-          last-kv (-> result meta :last-prim-kvs)]
-      (reset! last-prim-kvs last-kv)
+            opts)
+          last-key-in-set (if result ((:cassandra/partition-key task-map) (last result)))]
+      (reset! last-key last-key-in-set)
       {:onyx.core/batch
        (map (fn [r] {:input task :message r}) result)})))
 
@@ -55,7 +57,7 @@
   [{:keys [onyx.core/compressed onyx.core/task-map] :as pipeline}]
   (when-not (empty? compressed)
     (cql/insert-batch
-      (cass/connect (:cassandra/host task-map))
+      (cass/connect (:cassandra/hosts task-map))
       (:cassandra/table task-map)
       compressed))
   {:onyx.core/written? true})
