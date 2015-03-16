@@ -1,8 +1,7 @@
-(ns onyx.plugin.cassandra-test
+(ns onyx.plugin.read-batch-test
     (:require [clojurewerkz.cassaforte.client :as cass]
               [clojurewerkz.cassaforte.cql :as cql]
-              [clojurewerkz.cassaforte.query :refer [column-definitions with if-exists]]
-              [clojurewerkz.cassaforte.uuids :as uuids]
+              [clojurewerkz.cassaforte.query :refer [column-definitions with]]
               [midje.sweet :refer :all]
               [onyx.plugin.cassandra]
               [onyx.queue.hornetq-utils :as hq-utils]
@@ -83,9 +82,9 @@
 
 (def catalog
   [{:onyx/name :scan
-    :onyx/ident :cassandra/scan
+    :onyx/ident :cassandra/read-rows
     :onyx/type :input
-    :onyx/medium :cassandra-scan
+    :onyx/medium :cassandra
     :onyx/consumption :concurrent
     :cassandra/hosts hosts
     :cassandra/scan-options {}
